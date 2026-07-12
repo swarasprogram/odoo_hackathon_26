@@ -3,10 +3,8 @@
 set -e
 echo "=== AssetFlow Setup ==="
 
-# 1. Start Postgres
-echo "Starting PostgreSQL..."
-docker-compose up -d db
-sleep 5
+# 1. Database is native
+echo "Assuming PostgreSQL is already running natively..."
 
 # 2. Backend
 echo "Setting up backend..."

@@ -12,7 +12,7 @@ class Department(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    head_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    head_id = Column(UUID(as_uuid=True), ForeignKey("users.id", use_alter=True), nullable=True)
     parent_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
