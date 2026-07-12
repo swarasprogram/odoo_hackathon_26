@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
 import Layout from '../components/layout/Layout';
 import Modal from '../components/common/Modal';
 import Badge from '../components/common/Badge';
 import EmptyState from '../components/common/EmptyState';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { Plus, CalendarDays, XCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { Plus, CalendarDays, XCircle, Wand2 } from 'lucide-react';
+import { format as fnsFormat } from 'date-fns';
 
 export default function ResourceBooking() {
   const qc = useQueryClient();
@@ -16,6 +17,8 @@ export default function ResourceBooking() {
   const [calAsset, setCalAsset] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [form, setForm] = useState({ asset_id: '', title: '', description: '', start_time: '', end_time: '' });
+  const [bookingMode, setBookingMode] = useState('custom'); // 'custom' | 'auto'
+  const [autoForm, setAutoForm] = useState({ duration: 60, preference: 'day' });
 
   const { data: bookings = [], isLoading } = useQuery({ queryKey: ['bookings'], queryFn: () => api.get('/bookings').then(r => r.data) });
   const { data: bookableAssets = [] } = useQuery({ queryKey: ['bookable-assets'], queryFn: () => api.get('/assets', { params: { is_bookable: true } }).then(r => r.data) });
@@ -39,7 +42,27 @@ export default function ResourceBooking() {
     onError: e => toast.error(e.response?.data?.detail || 'Error'),
   });
 
+  const suggest = useMutation({
+    mutationFn: d => api.post('/bookings/suggest', d).then(r => r.data),
+    onSuccess: (data) => {
+      toast.success('Found a suitable slot!');
+      // Server returns naive UTC. Append 'Z' to parse as UTC in JS.
+      const start = new Date(data.start_time + 'Z');
+      const end = new Date(data.end_time + 'Z');
+      
+      const toLocal = d => {
+        const pad = n => (n < 10 ? '0' + n : n);
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      };
+      
+      setForm(f => ({ ...f, start_time: toLocal(start), end_time: toLocal(end) }));
+      setBookingMode('custom');
+    },
+    onError: e => toast.error(e.response?.data?.detail || 'Could not find a slot'),
+  });
+
   const submit = e => { e.preventDefault(); create.mutate({ ...form, start_time: new Date(form.start_time).toISOString(), end_time: new Date(form.end_time).toISOString() }); };
+  const findSlot = () => suggest.mutate({ asset_id: form.asset_id, duration_minutes: parseInt(autoForm.duration), preference: autoForm.preference });
 
   return (
     <Layout>
@@ -63,7 +86,7 @@ export default function ResourceBooking() {
               {calendar.map(b => (
                 <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--gray-50)', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <CalendarDays size={14} style={{ color: 'var(--text-3)' }} />
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{format(new Date(b.start), 'dd MMM, HH:mm')} → {format(new Date(b.end), 'HH:mm')}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{fnsFormat(new Date(b.start), 'dd MMM, HH:mm')} → {fnsFormat(new Date(b.end), 'HH:mm')}</span>
                   <span style={{ color: 'var(--text-3)', fontSize: 13 }}>{b.booked_by}</span>
                   <Badge value={b.status} />
                 </div>
@@ -86,8 +109,8 @@ export default function ResourceBooking() {
                   <td><b>{b.asset_tag}</b><div className="text-muted">{b.asset_name}</div></td>
                   <td>{b.title}</td>
                   <td>{b.booked_by_name}</td>
-                  <td>{format(new Date(b.start_time), 'dd MMM HH:mm')}</td>
-                  <td>{format(new Date(b.end_time), 'dd MMM HH:mm')}</td>
+                  <td>{fnsFormat(new Date(b.start_time), 'dd MMM HH:mm')}</td>
+                  <td>{fnsFormat(new Date(b.end_time), 'dd MMM HH:mm')}</td>
                   <td><Badge value={b.status} /></td>
                   <td>
                     {(b.status === 'upcoming' || b.status === 'ongoing') && (
@@ -103,10 +126,16 @@ export default function ResourceBooking() {
 
       {modal === 'create' && (
         <Modal title="Book Resource" onClose={() => setModal(null)}
-          footer={<><button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={submit} disabled={create.isPending}>{create.isPending ? <span className="spinner" /> : 'Confirm Booking'}</button></>}>
+          footer={<><button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={submit} disabled={create.isPending || !form.start_time}>{create.isPending ? <span className="spinner" /> : 'Confirm Booking'}</button></>}>
           <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text-3)' }}>
             ℹ️ Bookings are rejected if they overlap with existing confirmed bookings.
           </div>
+          
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button className={`btn btn-sm ${bookingMode === 'custom' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setBookingMode('custom')}>Custom Slot</button>
+            <button className={`btn btn-sm ${bookingMode === 'auto' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setBookingMode('auto')}><Wand2 size={13} /> Auto Suggest Slot</button>
+          </div>
+
           <form onSubmit={submit}>
             <div className="form-group"><label className="form-label">Resource *</label>
               <select className="form-select" value={form.asset_id} onChange={set('asset_id')} required>
@@ -115,10 +144,34 @@ export default function ResourceBooking() {
               </select>
             </div>
             <div className="form-group"><label className="form-label">Booking Title *</label><input className="form-input" placeholder="e.g. Team standup" value={form.title} onChange={set('title')} required /></div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Start Time *</label><input className="form-input" type="datetime-local" value={form.start_time} onChange={set('start_time')} required /></div>
-              <div className="form-group"><label className="form-label">End Time *</label><input className="form-input" type="datetime-local" value={form.end_time} onChange={set('end_time')} required /></div>
-            </div>
+            
+            {bookingMode === 'auto' ? (
+              <div style={{ background: 'var(--gray-50)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: 14 }}>Let the algorithm decide</h4>
+                <div className="form-row">
+                  <div className="form-group"><label className="form-label">Duration (Minutes)</label>
+                    <input className="form-input" type="number" step="15" value={autoForm.duration} onChange={e => setAutoForm(f => ({...f, duration: e.target.value}))} />
+                  </div>
+                  <div className="form-group"><label className="form-label">Time Preference</label>
+                    <select className="form-select" value={autoForm.preference} onChange={e => setAutoForm(f => ({...f, preference: e.target.value}))}>
+                      <option value="day">Day time (08:00 - 18:00)</option>
+                      <option value="night">Night time (18:00 - 08:00)</option>
+                      <option value="next_day">Whole next day</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="button" className="btn btn-secondary" style={{ width: '100%' }} onClick={findSlot} disabled={!form.asset_id || suggest.isPending}>
+                  {suggest.isPending ? <span className="spinner" /> : <><Wand2 size={15}/> Find Next Available Slot</>}
+                </button>
+                {!form.asset_id && <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 8 }}>Please select a resource first</div>}
+              </div>
+            ) : (
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Start Time *</label><input className="form-input" type="datetime-local" value={form.start_time} onChange={set('start_time')} required /></div>
+                <div className="form-group"><label className="form-label">End Time *</label><input className="form-input" type="datetime-local" value={form.end_time} onChange={set('end_time')} required /></div>
+              </div>
+            )}
+            
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={form.description} onChange={set('description')} /></div>
           </form>
         </Modal>

@@ -44,3 +44,12 @@ class BookingOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class AutoSuggestRequest(BaseModel):
+    asset_id: UUID
+    duration_minutes: int
+    preference: str
+
+class SuggestedSlot(BaseModel):
+    start_time: datetime
+    end_time: datetime

@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.booking import ResourceBooking, BookingStatus
 from app.models.asset import Asset, AssetStatus
 from app.models.user import User
-from app.schemas.booking import BookingCreate, BookingCancel, BookingOut
+from app.schemas.booking import BookingCreate, BookingCancel, BookingOut, AutoSuggestRequest, SuggestedSlot
 from app.dependencies import get_current_user
 from app.services.notification import create_notification, log_activity
 from app.models.notification import NotificationType
@@ -119,6 +119,64 @@ def cancel_booking(booking_id: UUID, data: BookingCancel, db: Session = Depends(
     log_activity(db, current_user.id, f"Cancelled booking {booking_id}", "booking", booking.id)
     db.commit()
     return _enrich_booking(booking)
+
+
+from datetime import timedelta
+
+@router.post("/suggest", response_model=SuggestedSlot)
+def suggest_booking_slot(data: AutoSuggestRequest, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    # Start checking from the next 30-min block
+    start_check = now + timedelta(minutes=(30 - now.minute % 30))
+    start_check = start_check.replace(second=0, microsecond=0)
+
+    if data.preference == "day":
+        if start_check.hour >= 18:
+            start_check = (start_check + timedelta(days=1)).replace(hour=8, minute=0)
+        elif start_check.hour < 8:
+            start_check = start_check.replace(hour=8, minute=0)
+    elif data.preference == "night":
+        if 8 <= start_check.hour < 18:
+            start_check = start_check.replace(hour=18, minute=0)
+    elif data.preference == "next_day":
+        start_check = (now + timedelta(days=1)).replace(hour=8, minute=0)
+
+    bookings = db.query(ResourceBooking).filter(
+        ResourceBooking.asset_id == data.asset_id,
+        ResourceBooking.status.in_([BookingStatus.upcoming, BookingStatus.ongoing]),
+        ResourceBooking.end_time > now
+    ).order_by(ResourceBooking.start_time).all()
+
+    duration = timedelta(minutes=data.duration_minutes)
+    
+    attempts = 0
+    while attempts < 100: # safety limit
+        attempts += 1
+        
+        # Enforce boundaries
+        if data.preference == "day" and (start_check + duration).hour > 18:
+            start_check = (start_check + timedelta(days=1)).replace(hour=8, minute=0)
+            continue
+        if data.preference == "night" and 8 <= (start_check + duration).hour < 18:
+            start_check = start_check.replace(hour=18, minute=0)
+            if start_check < now: 
+                start_check += timedelta(days=1)
+            continue
+        if data.preference == "next_day" and start_check.date() > (now + timedelta(days=1)).date():
+            raise HTTPException(404, "No slot found next day")
+
+        slot_end = start_check + duration
+        overlap = False
+        for b in bookings:
+            if b.start_time < slot_end and b.end_time > start_check:
+                overlap = True
+                start_check = b.end_time
+                break
+        
+        if not overlap:
+            return {"start_time": start_check, "end_time": slot_end}
+            
+    raise HTTPException(404, "Could not find a suitable slot")
 
 
 @router.get("/calendar/{asset_id}")
