@@ -118,6 +118,8 @@ assetflow/
 
 ## User Roles
 
+
+
 | Role | Capabilities |
 |------|-------------|
 | **Admin** | Full access: org setup, role promotion, all features |
