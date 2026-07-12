@@ -1,4 +1,8 @@
-from fastapi import FastAPI
+import os
+import uuid
+import shutil
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers.auth import router as auth_router
@@ -40,7 +44,22 @@ app.include_router(audits_router)
 app.include_router(reports_router)
 app.include_router(notifications_router)
 app.include_router(logs_router)
+app.include_router(logs_router)
 
+# Ensure uploads directory exists
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(400, "File must be an image")
+    ext = file.filename.split('.')[-1]
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    path = os.path.join("uploads", filename)
+    with open(path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    return {"image_url": f"/uploads/{filename}"}
 
 @app.get("/")
 def root():

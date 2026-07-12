@@ -17,6 +17,7 @@ class AssetBase(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     is_bookable: bool = False
+    image_url: Optional[str] = None
 
 
 class AssetCreate(AssetBase):
@@ -35,6 +36,7 @@ class AssetUpdate(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     is_bookable: Optional[bool] = None
+    image_url: Optional[str] = None
 
 
 class AssetOut(AssetBase):

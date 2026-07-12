@@ -44,6 +44,7 @@ class Asset(Base):
     documents = Column(Text, nullable=True)  # JSON list of doc URLs
     is_bookable = Column(Boolean, default=False)
     registered_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    image_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

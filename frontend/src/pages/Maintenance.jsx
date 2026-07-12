@@ -17,7 +17,7 @@ export default function Maintenance() {
   const { isAssetManager } = useAuth();
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ asset_id: '', description: '', priority: 'medium' });
+  const [form, setForm] = useState({ asset_id: '', description: '', priority: 'medium', image_url: '', imageFile: null });
   const [rejectReason, setRejectReason] = useState('');
   const [resolveNotes, setResolveNotes] = useState('');
 
@@ -48,7 +48,23 @@ export default function Maintenance() {
     onError: e => toast.error(e.response?.data?.detail || 'Error'),
   });
 
-  const submit = e => { e.preventDefault(); create.mutate(form); };
+  const submit = async e => { 
+    e.preventDefault(); 
+    let finalUrl = form.image_url;
+    if (form.imageFile) {
+      const fd = new FormData();
+      fd.append('file', form.imageFile);
+      try {
+        const res = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        finalUrl = res.data.image_url;
+      } catch (err) {
+        return toast.error("Image upload failed");
+      }
+    }
+    const payload = { ...form, image_url: finalUrl };
+    delete payload.imageFile;
+    create.mutate(payload); 
+  };
 
   const openAction = (req, action) => { setSelected(req); setModal(action); setRejectReason(''); setResolveNotes(''); };
 
@@ -56,7 +72,7 @@ export default function Maintenance() {
     <Layout>
       <div className="page-header">
         <div><h1>Maintenance Management</h1><p>Track and approve asset repair requests</p></div>
-        <button className="btn btn-primary" onClick={() => { setForm({ asset_id: '', description: '', priority: 'medium' }); setModal('create'); }}><Plus size={15} />Raise Request</button>
+        <button className="btn btn-primary" onClick={() => { setForm({ asset_id: '', description: '', priority: 'medium', image_url: '', imageFile: null }); setModal('create'); }}><Plus size={15} />Raise Request</button>
       </div>
 
       {isLoading ? <div className="loading-page"><div className="spinner spinner-lg" /></div> : reqs.length === 0 ? (
@@ -69,7 +85,12 @@ export default function Maintenance() {
               {reqs.map(r => (
                 <tr key={r.id}>
                   <td><b>{r.asset_tag}</b><div className="text-muted">{r.asset_name}</div></td>
-                  <td style={{ maxWidth: 200 }}>{r.description}</td>
+                  <td style={{ maxWidth: 200 }}>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      {r.image_url && <img src={`http://localhost:8000${r.image_url}`} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} />}
+                      <div>{r.description}</div>
+                    </div>
+                  </td>
                   <td>{r.raised_by_name}</td>
                   <td><Badge value={r.priority} /></td>
                   <td><Badge value={r.status} /></td>
@@ -109,6 +130,10 @@ export default function Maintenance() {
               </select>
             </div>
             <div className="form-group"><label className="form-label">Description *</label><textarea className="form-textarea" placeholder="Describe the issue in detail…" value={form.description} onChange={set('description')} required /></div>
+            <div className="form-group">
+              <label className="form-label">Attach Photo (Optional)</label>
+              <input className="form-input" type="file" accept="image/*" onChange={e => setForm(f => ({ ...f, imageFile: e.target.files[0] }))} />
+            </div>
           </form>
         </Modal>
       )}

@@ -9,6 +9,7 @@ class MaintenanceCreate(BaseModel):
     asset_id: UUID
     description: str
     priority: MaintenancePriority = MaintenancePriority.medium
+    image_url: Optional[str] = None
 
 
 class MaintenanceApprove(BaseModel):
@@ -49,6 +50,7 @@ class MaintenanceOut(BaseModel):
     estimated_cost: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    image_url: Optional[str] = None
 
     class Config:
         from_attributes = True

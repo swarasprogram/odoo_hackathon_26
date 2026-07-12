@@ -41,6 +41,7 @@ class MaintenanceRequest(Base):
     estimated_cost = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    image_url = Column(String(500), nullable=True)
 
     # Relationships
     asset = relationship("Asset", back_populates="maintenance_requests")

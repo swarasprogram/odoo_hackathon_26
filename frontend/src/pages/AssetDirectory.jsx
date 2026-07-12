@@ -6,7 +6,8 @@ import Badge from '../components/common/Badge';
 import EmptyState from '../components/common/EmptyState';
 import api from '../api/client';
 import toast from 'react-hot-toast';
-import { Plus, Search, Package, Eye, Edit, History } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
+import { Plus, Search, Package, Eye, Edit, History, QrCode, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 
 const STATUSES = ['available','allocated','reserved','under_maintenance','lost','retired','disposed'];
@@ -19,7 +20,7 @@ export default function AssetDirectory() {
   const [filterCat, setFilterCat] = useState('');
   const [modal, setModal] = useState(null); // null | 'create' | 'edit' | 'history'
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: '', serial_number: '', category_id: '', department_id: '', acquisition_date: '', acquisition_cost: '', condition: 'good', location: '', description: '', is_bookable: false });
+  const [form, setForm] = useState({ name: '', serial_number: '', category_id: '', department_id: '', acquisition_date: '', acquisition_cost: '', condition: 'good', location: '', description: '', is_bookable: false, image_url: '', imageFile: null });
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['assets', search, filterStatus, filterCat],
@@ -41,10 +42,36 @@ export default function AssetDirectory() {
     onError: e => toast.error(e.response?.data?.detail || 'Error'),
   });
 
-  const openCreate = () => { setForm({ name: '', serial_number: '', category_id: '', department_id: '', acquisition_date: '', acquisition_cost: '', condition: 'good', location: '', description: '', is_bookable: false }); setModal('create'); };
-  const openEdit = a => { setSelected(a); setForm({ name: a.name, serial_number: a.serial_number || '', category_id: a.category_id, department_id: a.department_id || '', acquisition_date: a.acquisition_date ? a.acquisition_date.slice(0,10) : '', acquisition_cost: a.acquisition_cost || '', condition: a.condition, location: a.location || '', description: a.description || '', is_bookable: a.is_bookable }); setModal('edit'); };
+  const openCreate = () => { setForm({ name: '', serial_number: '', category_id: '', department_id: '', acquisition_date: '', acquisition_cost: '', condition: 'good', location: '', description: '', is_bookable: false, image_url: '', imageFile: null }); setModal('create'); };
+  const openEdit = a => { setSelected(a); setForm({ name: a.name, serial_number: a.serial_number || '', category_id: a.category_id, department_id: a.department_id || '', acquisition_date: a.acquisition_date ? a.acquisition_date.slice(0,10) : '', acquisition_cost: a.acquisition_cost || '', condition: a.condition, location: a.location || '', description: a.description || '', is_bookable: a.is_bookable, image_url: a.image_url || '', imageFile: null }); setModal('edit'); };
   const openHistory = a => { setSelected(a); setModal('history'); };
-  const submit = e => { e.preventDefault(); save.mutate({ ...form, category_id: form.category_id || undefined, department_id: form.department_id || null, acquisition_date: form.acquisition_date || null, acquisition_cost: form.acquisition_cost || null }); };
+  const openQR = a => { setSelected(a); setModal('qrcode'); };
+  
+  const submit = async e => { 
+    e.preventDefault(); 
+    let finalUrl = form.image_url;
+    if (form.imageFile) {
+      const fd = new FormData();
+      fd.append('file', form.imageFile);
+      try {
+        const res = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        finalUrl = res.data.image_url;
+      } catch (err) {
+        return toast.error("Image upload failed");
+      }
+    }
+    const payload = { ...form, image_url: finalUrl, category_id: form.category_id || undefined, department_id: form.department_id || null, acquisition_date: form.acquisition_date || null, acquisition_cost: form.acquisition_cost || null };
+    delete payload.imageFile;
+    save.mutate(payload); 
+  };
+
+  const printQR = () => {
+    const canvas = document.getElementById('qr-canvas');
+    const pngUrl = canvas.toDataURL('image/png');
+    const win = window.open('');
+    win.document.write(`<img src="${pngUrl}" onload="window.print();window.close()" />`);
+    win.focus();
+  };
 
   return (
     <Layout>
@@ -78,7 +105,13 @@ export default function AssetDirectory() {
               {assets.map(a => (
                 <tr key={a.id}>
                   <td><span className="chip">{a.asset_tag}</span></td>
-                  <td><b>{a.name}</b>{a.serial_number && <div className="text-muted">S/N: {a.serial_number}</div>}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {a.image_url && <img src={`http://localhost:8000${a.image_url}`} style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'cover' }} />}
+                      <b>{a.name}</b>
+                    </div>
+                    {a.serial_number && <div className="text-muted" style={{ marginTop: 4 }}>S/N: {a.serial_number}</div>}
+                  </td>
                   <td>{a.category_name}</td>
                   <td><Badge value={a.status} /></td>
                   <td><Badge value={a.condition} /></td>
@@ -86,6 +119,7 @@ export default function AssetDirectory() {
                   <td>{a.current_holder || <span className="text-muted">—</span>}</td>
                   <td>
                     <div className="flex gap-2">
+                      <button className="btn btn-ghost btn-sm btn-icon" title="QR Code" onClick={() => openQR(a)}><QrCode size={13} /></button>
                       <button className="btn btn-ghost btn-sm btn-icon" title="Edit" onClick={() => openEdit(a)}><Edit size={13} /></button>
                       <button className="btn btn-ghost btn-sm btn-icon" title="History" onClick={() => openHistory(a)}><History size={13} /></button>
                     </div>
@@ -133,6 +167,17 @@ export default function AssetDirectory() {
               <div className="form-group"><label className="form-label">Location</label><input className="form-input" placeholder="e.g. Floor 2, Room B2" value={form.location} onChange={set('location')} /></div>
             </div>
             <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={form.description} onChange={set('description')} /></div>
+            
+            <div className="form-group">
+              <label className="form-label">Asset Image</label>
+              <input className="form-input" type="file" accept="image/*" onChange={e => setForm(f => ({ ...f, imageFile: e.target.files[0] }))} />
+              {form.image_url && !form.imageFile && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={`http://localhost:8000${form.image_url}`} style={{ height: 60, borderRadius: 4, objectFit: 'cover' }} />
+                </div>
+              )}
+            </div>
+
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
               <input type="checkbox" checked={form.is_bookable} onChange={e => setForm(f => ({ ...f, is_bookable: e.target.checked }))} />
               <span>Mark as shared/bookable resource</span>
@@ -177,6 +222,29 @@ export default function AssetDirectory() {
               )}
             </>
           )}
+        </Modal>
+      )}
+      {/* QR Code Modal */}
+      {modal === 'qrcode' && selected && (
+        <Modal title={`Asset Tag: ${selected.asset_tag}`} onClose={() => setModal(null)} size="sm">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0', gap: 24 }}>
+            <div style={{ padding: 16, background: '#fff', border: '1px solid #eee', borderRadius: 12 }}>
+              <QRCodeCanvas 
+                id="qr-canvas"
+                value={JSON.stringify({ tag: selected.asset_tag, id: selected.id, name: selected.name })} 
+                size={200} 
+                level="H" 
+                includeMargin={true} 
+              />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>{selected.name}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{selected.category_name} • {selected.department_name || 'No Dept'}</div>
+            </div>
+            <button className="btn btn-primary" style={{ width: '100%' }} onClick={printQR}>
+              <Printer size={15} /> Print QR Label
+            </button>
+          </div>
         </Modal>
       )}
     </Layout>

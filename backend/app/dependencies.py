@@ -37,9 +37,13 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 def require_asset_manager_or_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role not in [UserRole.admin, UserRole.asset_manager]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Asset Manager or Admin access required")
-    return current_user
+    if current_user.role in [UserRole.admin, UserRole.asset_manager]:
+        return current_user
+        
+    if current_user.department and current_user.department.name.upper() in ["HR", "HUMAN RESOURCES"]:
+        return current_user
+        
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Asset Manager, Admin, or HR access required")
 
 
 def require_dept_head_or_above(current_user: User = Depends(get_current_user)) -> User:
